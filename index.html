@@ -17,6 +17,12 @@
             }
 
             try {
+                let username = prompt("Enter a username for fingerprint registration:");
+                if (!username) {
+                    document.getElementById("output").innerText = "Registration cancelled.";
+                    return;
+                }
+
                 let challenge = new Uint8Array(32);
                 window.crypto.getRandomValues(challenge);
 
@@ -26,7 +32,7 @@
                 let publicKey = {
                     challenge: challenge,
                     rp: { name: "My Site" },
-                    user: { id: userID, name: "User", displayName: "User" },
+                    user: { id: userID, name: username, displayName: username },
                     pubKeyCredParams: [{ type: "public-key", alg: -7 }],
                     authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
                     timeout: 60000
@@ -37,11 +43,12 @@
                 if (credential) {
                     let credentialId = new Uint8Array(credential.rawId);
                     let credentialIdBase64 = btoa(String.fromCharCode(...credentialId));
-                    
-                    // Store credential ID for authentication
-                    localStorage.setItem("credentialId", credentialIdBase64);
 
-                    document.getElementById("output").innerText = "Fingerprint Registered! Credential ID saved.";
+                    let users = JSON.parse(localStorage.getItem("users")) || {};
+                    users[username] = credentialIdBase64;
+                    localStorage.setItem("users", JSON.stringify(users));
+
+                    document.getElementById("output").innerText = `Fingerprint Registered for ${username}!`;
                 }
             } catch (error) {
                 document.getElementById("output").innerText = "Error: " + error.message;
@@ -54,9 +61,15 @@
                 return;
             }
 
-            let storedCredentialId = localStorage.getItem("credentialId");
-            if (!storedCredentialId) {
-                document.getElementById("output").innerText = "No fingerprint registered. Register first.";
+            let username = prompt("Enter your username for authentication:");
+            if (!username) {
+                document.getElementById("output").innerText = "Authentication cancelled.";
+                return;
+            }
+
+            let users = JSON.parse(localStorage.getItem("users")) || {};
+            if (!users[username]) {
+                document.getElementById("output").innerText = "No fingerprint found for this user.";
                 return;
             }
 
@@ -64,7 +77,7 @@
                 let challenge = new Uint8Array(32);
                 window.crypto.getRandomValues(challenge);
 
-                let credentialIdBytes = Uint8Array.from(atob(storedCredentialId), c => c.charCodeAt(0));
+                let credentialIdBytes = Uint8Array.from(atob(users[username]), c => c.charCodeAt(0));
 
                 let publicKey = {
                     challenge: challenge,
@@ -76,7 +89,7 @@
                 let credential = await navigator.credentials.get({ publicKey });
 
                 if (credential) {
-                    document.getElementById("output").innerText = "Fingerprint Matched! Access Granted.";
+                    document.getElementById("output").innerText = `Fingerprint Matched! Welcome, ${username}!`;
                 } else {
                     document.getElementById("output").innerText = "Fingerprint Mismatch!";
                 }
