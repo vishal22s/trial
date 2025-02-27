@@ -6,7 +6,7 @@
     <title>Fingerprint Scanner</title>
     <style>
         body { font-family: Arial, sans-serif; text-align: center; margin: 50px; }
-        button { padding: 10px 20px; font-size: 18px; cursor: pointer; }
+        button { padding: 10px 20px; font-size: 18px; cursor: pointer; margin: 10px; }
         #output { margin-top: 20px; font-weight: bold; }
     </style>
     <script>
@@ -20,10 +20,13 @@
                 let challenge = new Uint8Array(32);
                 window.crypto.getRandomValues(challenge);
 
+                let userID = new Uint8Array(16);
+                window.crypto.getRandomValues(userID);
+
                 let publicKey = {
                     challenge: challenge,
                     rp: { name: "My Site" },
-                    user: { id: new Uint8Array(16), name: "User", displayName: "User" },
+                    user: { id: userID, name: "User", displayName: "User" },
                     pubKeyCredParams: [{ type: "public-key", alg: -7 }],
                     authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
                     timeout: 60000
@@ -31,11 +34,15 @@
 
                 let credential = await navigator.credentials.create({ publicKey });
 
-                let credentialRawId = new Uint8Array(credential.rawId);
-                let credentialHash = btoa(String.fromCharCode(...credentialRawId));
+                if (credential) {
+                    let credentialId = new Uint8Array(credential.rawId);
+                    let credentialIdBase64 = btoa(String.fromCharCode(...credentialId));
+                    
+                    // Store credential ID for authentication
+                    localStorage.setItem("credentialId", credentialIdBase64);
 
-                document.getElementById("output").innerText = "Fingerprint Registered! Hashed Data:\n" + credentialHash;
-                localStorage.setItem("fingerprint", credentialHash);
+                    document.getElementById("output").innerText = "Fingerprint Registered! Credential ID saved.";
+                }
             } catch (error) {
                 document.getElementById("output").innerText = "Error: " + error.message;
             }
@@ -47,24 +54,29 @@
                 return;
             }
 
+            let storedCredentialId = localStorage.getItem("credentialId");
+            if (!storedCredentialId) {
+                document.getElementById("output").innerText = "No fingerprint registered. Register first.";
+                return;
+            }
+
             try {
                 let challenge = new Uint8Array(32);
                 window.crypto.getRandomValues(challenge);
 
+                let credentialIdBytes = Uint8Array.from(atob(storedCredentialId), c => c.charCodeAt(0));
+
                 let publicKey = {
                     challenge: challenge,
-                    allowCredentials: [{ id: new Uint8Array(16), type: "public-key" }],
+                    allowCredentials: [{ id: credentialIdBytes, type: "public-key" }],
                     timeout: 60000,
                     userVerification: "required"
                 };
 
                 let credential = await navigator.credentials.get({ publicKey });
 
-                let credentialRawId = new Uint8Array(credential.rawId);
-                let credentialHash = btoa(String.fromCharCode(...credentialRawId));
-
-                if (credentialHash === localStorage.getItem("fingerprint")) {
-                    document.getElementById("output").innerText = "Fingerprint Matched!";
+                if (credential) {
+                    document.getElementById("output").innerText = "Fingerprint Matched! Access Granted.";
                 } else {
                     document.getElementById("output").innerText = "Fingerprint Mismatch!";
                 }
