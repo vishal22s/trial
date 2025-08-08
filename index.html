@@ -22,9 +22,10 @@
 <body>
 <h1>16-up Odd/Even PDF — generator</h1>
 
-<p>This tool splits your PDF into odd & even pages, then lays them out 16-up on new sheets. Each thumbnail is automatically watermarked with its original page number.</p>
+<p style="margin-top:12px;">This tool splits your PDF into odd & even pages, then lays them out 16-up on new sheets. Each thumbnail is automatically watermarked with its original page number.</p>
 
-<input id="fileInput" type="file" accept="application/pdf" style="margin-top:12px;"/>
+<input id="fileInput" type="file" accept="application/pdf" style="margin-top:12px;" />
+
 
 <div style="margin-top:12px;">
   <button id="generate">Generate PDFs (Odd & Even)</button>
@@ -107,7 +108,7 @@
   const evenFillPositions = [3,2,1,0,7,6,5,4,11,10,9,8,15,14,13,12];
 
   // Compose a 16-up PDF from an array of page objects with individual watermarks.
-  async function compose16Up(pageObjects /*array of {pageNumber, dataUrl} or nulls for blanks*/, posMap /*array length 16 -> indices in pageObjects or null for blank*/){
+  async function compose16Up(pageObjects /*array of {pageNumber, dataUrl}*/, posMap /*array length 16 -> indices in pageObjects or null for blank*/){
     const pdfDoc = await PDFDocument.create();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const { slots, pageWidth, pageHeight } = getGridSlots();
@@ -279,6 +280,8 @@
       const oddUrl = URL.createObjectURL(oddBlob);
       downloadOdd.href = oddUrl;
       downloadOdd.style.display='inline-block';
+    } else {
+      downloadOdd.style.display='none';
     }
 
     // Create blob URLs for download for even pages
@@ -287,6 +290,8 @@
       const evenUrl = URL.createObjectURL(evenBlob);
       downloadEven.href = evenUrl;
       downloadEven.style.display='inline-block';
+    } else {
+      downloadEven.style.display='none';
     }
 
     // Add previews of the final generated PDFs
@@ -297,7 +302,14 @@
         holder.style.display='flex';
         holder.style.gap='8px';
         holder.style.marginTop='16px';
-        holder.innerHTML = `<strong>Generated PDF Previews:</strong>`;
+        
+        const existingHolder = document.getElementById('preview-holder');
+        if(existingHolder) existingHolder.remove();
+        holder.id = 'preview-holder';
+
+        if (oddPreviewData || evenPreviewData) {
+            holder.innerHTML = `<strong style="width:100%; margin-bottom:4px;">Generated PDF Previews:</strong>`;
+        }
 
         if (oddPreviewData) {
             const imgOdd = document.createElement('img');
@@ -311,7 +323,9 @@
             imgEven.className = 'thumb';
             holder.appendChild(imgEven);
         }
-        preview.appendChild(holder);
+        if(holder.children.length > 1) { // more than just the strong tag
+            preview.appendChild(holder);
+        }
     } catch(e){
       console.warn('Preview generation failed', e);
     }
