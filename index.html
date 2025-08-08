@@ -1,578 +1,101 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>PDF 16-up Imposer — Click-to-edit per-page watermarks</title>
-
-<!-- Libraries -->
+<meta charset="UTF-8" />
+<title>Simple PDF Watermark</title>
 <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-<script src="https://unpkg.com/pdfjs-dist@3.4.120/build/pdf.min.js"></script>
-
 <style>
-  :root {
-    --primary: #0d6efd;
-    --muted: #6c757d;
-    --bg: #f8f9fa;
-    --card: #fff;
-    --border: #e6e6e6;
-  }
-  body {
-    font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial;
-    background: var(--bg);
-    margin: 20px;
-    color: #111;
-  }
-  .wrap { max-width: 1100px; margin: 0 auto; background: var(--card); padding: 20px; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.06); }
-  h1 { margin: 0 0 6px; color: var(--primary); }
-  p.lead { margin: 0 0 18px; color: var(--muted); }
-  .flex { display:flex; gap:12px; flex-wrap:wrap; }
-  .panel { background:#fff; border:1px solid var(--border); padding:12px; border-radius:8px; flex:1 1 320px; min-width:260px; }
-  label { display:block; margin-bottom:6px; color:var(--muted); font-size:0.95rem; }
-  .upload { border:2px dashed var(--border); padding:18px; text-align:center; cursor:pointer; border-radius:8px; }
-  .upload:hover { background: #fbfdff; }
-  input[type="file"] { display:none; }
-  select, input[type="text"], textarea { width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); box-sizing:border-box; }
-  textarea { min-height:90px; font-family:monospace; resize:vertical; }
-  .controls-grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; align-items:center; }
-  .btn { display:inline-block; padding:10px 14px; border-radius:8px; background:var(--primary); color:#fff; border:none; cursor:pointer; font-weight:700; }
-  .btn:disabled { opacity:.6; cursor:not-allowed; }
-  .small { font-size:0.85rem; color:var(--muted); }
-  #previewArea { margin-top:14px; display:flex; gap:12px; flex-wrap:wrap; }
-  .sheetPreview { border:1px solid var(--border); padding:8px; border-radius:6px; background:#fff; display:inline-block; }
-  .sheetTitle { font-weight:700; margin:6px 0; font-size:0.9rem; color:var(--muted) }
-  .gridMini { display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; }
-  .miniCell { position:relative; border:1px solid #ddd; background:#fafafa; cursor:pointer; }
-  .miniCell canvas { width:100%; display:block; height:auto; }
-  .miniLabel { position:absolute; left:4px; top:4px; background:rgba(255,255,255,0.85); padding:2px 6px; font-size:12px; border-radius:4px; color:#333; }
-  .modal { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.45); z-index:9999; }
-  .modalCard { background:#fff; padding:16px; border-radius:8px; width:420px; max-width:94%; box-shadow:0 8px 30px rgba(0,0,0,.25); }
-  .row { display:flex; gap:8px; }
-  .download { display:inline-block; margin-top:8px; padding:8px 12px; background:#198754; color:#fff; border-radius:6px; text-decoration:none; }
-  .status { margin-left:8px; font-size:0.9rem; color:var(--muted) }
+  body { font-family: Arial, sans-serif; padding: 20px; }
 </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>PDF 16-up Imposer</h1>
-    <p class="lead">Split into odd/even sets, place 16 mini-pages per A4 sheet, and add watermarks. Click any mini-page when "Different text" mode is active to edit its watermark.</p>
 
-    <div class="flex">
-      <div class="panel">
-        <label>Upload PDF</label>
-        <label class="upload" id="uploadLabel">Click to choose PDF
-          <input id="fileInput" type="file" accept="application/pdf">
-        </label>
-        <div class="small" id="fileName">No file selected</div>
+<h2>Upload PDF & Add Watermark</h2>
+<input type="file" id="fileInput" accept="application/pdf" />
+<br/><br/>
 
-        <hr style="margin:10px 0">
-
-        <label>Preview Set</label>
-        <select id="previewSet">
-          <option value="odd">Odd pages (1,3,5...)</option>
-          <option value="even">Even pages (2,4,6...)</option>
-          <option value="both">Both (shows odd then even)</option>
-        </select>
-
-        <label style="margin-top:10px">Watermark Mode</label>
-        <select id="wmMode">
-          <option value="none">No Watermark</option>
-          <option value="pageNumbers">Page Numbers</option>
-          <option value="customSame">Same custom text (all mini-pages)</option>
-          <option value="customDifferent">Different text (click mini-page to edit)</option>
-        </select>
-
-        <div id="sameBox" style="margin-top:10px; display:none;">
-          <label>Custom text (applies to all mini-pages)</label>
-          <input id="sameText" type="text" placeholder="e.g. CONFIDENTIAL">
-        </div>
-
-        <div style="margin-top:10px;">
-          <label>Position</label>
-          <select id="wmPos">
-            <option value="center">Center</option>
-            <option value="top-left">Top-left</option>
-            <option value="top-right">Top-right</option>
-            <option value="bottom-left">Bottom-left</option>
-            <option value="bottom-right">Bottom-right</option>
-          </select>
-        </div>
-
-        <div class="controls-grid" style="margin-top:10px;">
-          <div>
-            <label>Rotation (deg)</label>
-            <input id="wmRot" type="range" min="-90" max="90" value="0">
-            <div class="small">Rotate: <span id="rotVal">0</span>°</div>
-          </div>
-          <div>
-            <label>Opacity</label>
-            <input id="wmOpacity" type="range" min="0" max="1" step="0.05" value="0.45">
-            <div class="small">Opacity: <span id="opVal">0.45</span></div>
-          </div>
-
-          <div>
-            <label>Base font size (pt)</label>
-            <input id="wmSize" type="range" min="8" max="80" value="28">
-            <div class="small">Size: <span id="sizeVal">28</span>pt</div>
-          </div>
-
-          <div>
-            <label>Color</label>
-            <input id="wmColor" type="color" value="#b22222">
-          </div>
-        </div>
-
-        <div style="margin-top:12px; display:flex; gap:8px; align-items:center;">
-          <button id="processBtn" class="btn" disabled>Generate PDFs</button>
-          <div class="status" id="status"></div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <label>Preview (click mini-page to edit when "Different text" mode selected)</label>
-        <div id="previewArea" class="small">No preview yet — upload a PDF.</div>
-      </div>
-    </div>
-
-    <div id="outputArea" style="margin-top:14px; display:flex; gap:12px; flex-wrap:wrap;">
-      <div style="flex:1 1 420px;">
-        <h4 style="margin:8px 0 6px">Odd Output Preview</h4>
-        <canvas id="oddCanvas" style="border:1px solid #e6e6e6; width:100%; max-width:500px;"></canvas><br>
-        <a id="oddDL" class="download hidden">Download Odd PDF</a>
-      </div>
-      <div style="flex:1 1 420px;">
-        <h4 style="margin:8px 0 6px">Even Output Preview</h4>
-        <canvas id="evenCanvas" style="border:1px solid #e6e6e6; width:100%; max-width:500px;"></canvas><br>
-        <a id="evenDL" class="download hidden">Download Even PDF</a>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal for editing per-page custom text -->
-  <div id="editModal" class="modal hidden" style="display:none;">
-    <div class="modalCard">
-      <h3 style="margin:0 0 8px">Edit watermark for original page <span id="modalPageNum"></span></h3>
-      <label class="small">Enter text (leave blank to clear)</label>
-      <input id="modalText" type="text" style="width:100%; padding:8px; margin-bottom:10px;">
-      <div style="display:flex; gap:8px; justify-content:flex-end;">
-        <button id="modalCancel" class="btn" style="background:#6c757d">Cancel</button>
-        <button id="modalSave" class="btn">Save</button>
-      </div>
-    </div>
-  </div>
+<label>
+  Watermark mode:
+  <select id="wmMode">
+    <option value="none">None</option>
+    <option value="pageNumbers">Page Numbers</option>
+    <option value="customSame">Same Custom Text</option>
+  </select>
+</label>
+<br/><br/>
+<label>
+  Custom Text:
+  <input type="text" id="customText" disabled placeholder="Enter watermark text" />
+</label>
+<br/><br/>
+<button id="processBtn" disabled>Generate Watermarked PDF</button>
+<br/><br/>
+<a id="downloadLink" style="display:none" download="watermarked.pdf">Download Watermarked PDF</a>
 
 <script>
-/* pdf.js worker */
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.4.120/build/pdf.worker.min.js';
+  const fileInput = document.getElementById('fileInput');
+  const wmMode = document.getElementById('wmMode');
+  const customText = document.getElementById('customText');
+  const processBtn = document.getElementById('processBtn');
+  const downloadLink = document.getElementById('downloadLink');
 
-/* DOM refs */
-const fileInput = document.getElementById('fileInput');
-const uploadLabel = document.getElementById('uploadLabel');
-const fileNameEl = document.getElementById('fileName');
-const previewArea = document.getElementById('previewArea');
-const wmMode = document.getElementById('wmMode');
-const sameBox = document.getElementById('sameBox');
-const sameTextInput = document.getElementById('sameText');
-const wmPos = document.getElementById('wmPos');
-const wmRot = document.getElementById('wmRot');
-const rotVal = document.getElementById('rotVal');
-const wmOpacity = document.getElementById('wmOpacity');
-const opVal = document.getElementById('opVal');
-const wmSize = document.getElementById('wmSize');
-const sizeVal = document.getElementById('sizeVal');
-const wmColor = document.getElementById('wmColor');
-const processBtn = document.getElementById('processBtn');
-const statusEl = document.getElementById('status');
-const previewSet = document.getElementById('previewSet');
+  let pdfBytes = null;
 
-const editModal = document.getElementById('editModal');
-const modalPageNum = document.getElementById('modalPageNum');
-const modalText = document.getElementById('modalText');
-const modalSave = document.getElementById('modalSave');
-const modalCancel = document.getElementById('modalCancel');
-
-const oddCanvas = document.getElementById('oddCanvas');
-const evenCanvas = document.getElementById('evenCanvas');
-const oddDL = document.getElementById('oddDL');
-const evenDL = document.getElementById('evenDL');
-
-/* state */
-let originalBytes = null;        // Uint8Array
-let originalPdfDoc = null;      // PDF-lib doc loaded (for page count)
-let originalPageCount = 0;
-let perPageTexts = {};          // map originalPageIndex (0-based) -> string (custom per-page)
-let currentEditingPage = null;  // original page index being edited
-
-/* UI wiring */
-uploadLabel.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', handleFileSelect);
-wmMode.addEventListener('change', () => {
-  sameBox.style.display = wmMode.value === 'customSame' ? 'block' : 'none';
-});
-wmRot.addEventListener('input', () => rotVal.textContent = wmRot.value);
-wmOpacity.addEventListener('input', () => opVal.textContent = wmOpacity.value);
-wmSize.addEventListener('input', () => sizeVal.textContent = wmSize.value);
-
-processBtn.addEventListener('click', startProcessing);
-
-/* modal handlers */
-modalCancel.addEventListener('click', () => closeModal(false));
-modalSave.addEventListener('click', () => closeModal(true));
-
-/* drag & drop */
-uploadLabel.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); uploadLabel.style.background='#f1f8ff'; });
-uploadLabel.addEventListener('dragleave', e => { uploadLabel.style.background=''; });
-uploadLabel.addEventListener('drop', async (e) => {
-  e.preventDefault(); e.stopPropagation();
-  uploadLabel.style.background='';
-  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
-    fileInput.files = e.dataTransfer.files;
-    await handleFileSelect();
-  }
-});
-
-/* file selection */
-async function handleFileSelect() {
-  const f = fileInput.files[0];
-  if (!f) return;
-  fileNameEl.textContent = f.name;
-  statusEl.textContent = 'Loading PDF...';
-  perPageTexts = {}; // reset per-page custom texts
-  try {
-    const ab = await f.arrayBuffer();
-    originalBytes = new Uint8Array(ab);
-    // load PDF-lib doc to get page count
-    originalPdfDoc = await PDFLib.PDFDocument.load(originalBytes);
-    originalPageCount = originalPdfDoc.getPageCount();
-    statusEl.textContent = `Loaded — ${originalPageCount} pages`;
+  fileInput.addEventListener('change', async () => {
+    if (fileInput.files.length === 0) return;
+    pdfBytes = await fileInput.files[0].arrayBuffer();
     processBtn.disabled = false;
-    renderPreviewGrid(); // initial preview based on default previewSet
-  } catch (err) {
-    console.error(err);
-    statusEl.textContent = 'Failed to load PDF';
-    processBtn.disabled = true;
-  }
-}
+    downloadLink.style.display = 'none';
+  });
 
-/* build indices based on parity (0 => odd pages: indexes 0,2,4..., 1 => even: 1,3,5...) */
-function buildIndicesForParity(parity) {
-  const idx = [];
-  for (let i = 0; i < originalPageCount; i++) {
-    if ((i % 2) === parity) idx.push(i);
-  }
-  return idx;
-}
+  wmMode.addEventListener('change', () => {
+    customText.disabled = wmMode.value !== 'customSame';
+  });
 
-/* render preview grid(s) using pdf.js — creates clickable mini canvases */
-async function renderPreviewGrid() {
-  if (!originalBytes) { previewArea.textContent = 'No preview yet — upload a PDF.'; return; }
-  previewArea.innerHTML = ''; // clear
+  processBtn.addEventListener('click', async () => {
+    if (!pdfBytes) return alert('Upload PDF first!');
+    const { PDFDocument, rgb, StandardFonts } = PDFLib;
+    const pdfDoc = await PDFDocument.load(pdfBytes);
+    const pages = pdfDoc.getPages();
+    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-  const set = previewSet.value; // 'odd', 'even', 'both'
-  const setsToRender = (set === 'both') ? ['odd','even'] : [set];
+    for (let i = 0; i < pages.length; i++) {
+      const page = pages[i];
+      const { width, height } = page.getSize();
 
-  for (const s of setsToRender) {
-    const parity = (s === 'odd') ? 0 : 1;
-    const indices = buildIndicesForParity(parity);
-    // create sheet container
-    const sheetDiv = document.createElement('div');
-    sheetDiv.className = 'sheetPreview';
-    const title = document.createElement('div');
-    title.className = 'sheetTitle';
-    title.textContent = `${s.toUpperCase()} pages (${indices.length})`;
-    sheetDiv.appendChild(title);
-
-    const grid = document.createElement('div');
-    grid.className = 'gridMini';
-
-    // Render each mini page using pdf.js into small canvas
-    // scale so mini fits (approx 150px width per cell)
-    const tmpLoading = pdfjsLib.getDocument({ data: originalBytes });
-    const pdf = await tmpLoading.promise;
-
-    for (let i = 0; i < indices.length; i++) {
-      const originalIndex = indices[i];
-      // create cell
-      const cell = document.createElement('div');
-      cell.className = 'miniCell';
-      cell.dataset.pageIndex = originalIndex; // store original page index
-      const label = document.createElement('div');
-      label.className = 'miniLabel';
-      label.textContent = `Pg ${originalIndex + 1}`;
-      cell.appendChild(label);
-
-      // create canvas
-      const c = document.createElement('canvas');
-      // append before rendering so size can be set
-      cell.appendChild(c);
-      grid.appendChild(cell);
-
-      try {
-        const page = await pdf.getPage(originalIndex + 1);
-        // compute viewport scale to fit mini cell width (~140px)
-        const targetWidth = 140;
-        const viewport = page.getViewport({ scale: 1 });
-        const scale = targetWidth / viewport.width;
-        const vp = page.getViewport({ scale });
-        c.width = vp.width;
-        c.height = vp.height;
-        const ctx = c.getContext('2d');
-        await page.render({ canvasContext: ctx, viewport: vp }).promise;
-      } catch (err) {
-        console.warn('mini render failed for page', originalIndex + 1, err);
-        // fallback: draw placeholder
-        c.width = 140; c.height = 180;
-        const ctx = c.getContext('2d');
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0,0,c.width,c.height);
-        ctx.fillStyle = '#888';
-        ctx.fillText(`Pg ${originalIndex + 1}`, 10, 20);
+      let text = '';
+      if (wmMode.value === 'pageNumbers') {
+        text = `Page ${i + 1}`;
+      } else if (wmMode.value === 'customSame') {
+        text = customText.value.trim();
+        if (!text) continue;
+      } else {
+        continue; // none mode, skip watermark
       }
 
-      // click handler only meaningful if customDifferent mode
-      cell.addEventListener('click', () => {
-        if (wmMode.value !== 'customDifferent') return;
-        currentEditingPage = originalIndex;
-        modalPageNum.textContent = originalIndex + 1;
-        modalText.value = perPageTexts.hasOwnProperty(originalIndex) ? perPageTexts[originalIndex] : '';
-        showModal();
+      const fontSize = 36;
+      const textWidth = font.widthOfTextAtSize(text, fontSize);
+      const textHeight = fontSize;
+
+      // Draw centered watermark with low opacity
+      page.drawText(text, {
+        x: (width - textWidth) / 2,
+        y: (height - textHeight) / 2,
+        size: fontSize,
+        font,
+        color: rgb(0.75, 0, 0),
+        opacity: 0.3,
+        rotate: PDFLib.degrees(-45),
       });
     }
 
-    sheetDiv.appendChild(grid);
-    previewArea.appendChild(sheetDiv);
-  }
-}
-
-/* show/hide modal */
-function showModal() {
-  editModal.style.display = 'flex';
-  editModal.classList.remove('hidden');
-  modalText.focus();
-}
-function closeModal(save) {
-  if (save && currentEditingPage !== null) {
-    const txt = (modalText.value || '').trim();
-    if (txt === '') {
-      delete perPageTexts[currentEditingPage];
-    } else {
-      perPageTexts[currentEditingPage] = txt;
-    }
-    // update mini label highlight (optionally) — rerender preview to show changes visually
-    renderPreviewGrid();
-  }
-  currentEditingPage = null;
-  editModal.style.display = 'none';
-  editModal.classList.add('hidden');
-}
-
-/* process: create odd and even PDFs and show previews + downloads */
-async function startProcessing() {
-  if (!originalBytes) return alert('Upload a PDF first.');
-  processBtn.disabled = true;
-  statusEl.textContent = 'Processing odd PDF...';
-
-  try {
-    const mode = wmMode.value; // 'none','pageNumbers','customSame','customDifferent'
-    const sameText = (sameTextInput.value || '').trim();
-    const wmOptions = {
-      position: wmPos.value,
-      rotation: parseInt(wmRot.value,10) || 0,
-      opacity: parseFloat(wmOpacity.value) || 0.45,
-      baseSize: parseInt(wmSize.value,10) || 28,
-      color: hexToRgb(wmColor.value)
-    };
-
-    // build indices arrays
-    const oddIndices = buildIndicesForParity(0);
-    const evenIndices = buildIndicesForParity(1);
-
-    const oddDoc = await createImposedPdf(originalBytes, oddIndices, 'odd', mode, sameText, perPageTexts, wmOptions);
-    statusEl.textContent = 'Processing even PDF...';
-    const evenDoc = await createImposedPdf(originalBytes, evenIndices, 'even', mode, sameText, perPageTexts, wmOptions);
-
-    statusEl.textContent = 'Saving & rendering previews...';
-    const oddBytes = await oddDoc.save();
-    const evenBytes = await evenDoc.save();
-
-    setupDownload(oddDL, oddBytes, `${safeName(fileNameEl.textContent)}_odd.pdf`);
-    setupDownload(evenDL, evenBytes, `${safeName(fileNameEl.textContent)}_even.pdf`);
-
-    await renderOutputPreview(oddBytes, oddCanvas);
-    await renderOutputPreview(evenBytes, evenCanvas);
-
-    statusEl.textContent = 'Done.';
-  } catch (err) {
-    console.error(err);
-    statusEl.textContent = 'Error during processing (check console)';
-    alert('Processing error — open console for details');
-  } finally {
-    processBtn.disabled = false;
-  }
-}
-
-/* create imposed PDF with watermark options
-   originalBytes: Uint8Array of source PDF
-   pageIndices: array of 0-based indices to include (in order)
-   type: 'odd' or 'even' (affects left-right ordering per row)
-   mode: watermark mode string
-   sameText: text for customSame
-   perPageTexts: map of original page index -> string (for customDifferent)
-   wmOptions: {position, rotation, opacity, baseSize, color}
-*/
-async function createImposedPdf(originalBytes, pageIndices, type, mode, sameText, perPageTexts, wmOptions) {
-  const { PDFDocument, StandardFonts, rgb, degrees } = PDFLib;
-  const out = await PDFDocument.create();
-  if (!pageIndices || pageIndices.length === 0) return out;
-
-  const A4_W = 595, A4_H = 842;
-  const cols = 4, rows = 4;
-  const perSheet = cols * rows;
-  const cellW = A4_W / cols, cellH = A4_H / rows;
-
-  // embed font into THIS output PDF
-  const font = await out.embedFont(StandardFonts.HelveticaBold);
-
-  const sheets = Math.ceil(pageIndices.length / perSheet);
-
-  // embedPdf can accept originalBytes and indexes
-  for (let s = 0; s < sheets; s++) {
-    const page = out.addPage([A4_W, A4_H]);
-    const chunk = pageIndices.slice(s * perSheet, (s + 1) * perSheet);
-    const embeddedPages = await out.embedPdf(originalBytes, chunk);
-
-    for (let i = 0; i < embeddedPages.length; i++) {
-      const emb = embeddedPages[i];
-      const row = Math.floor(i / cols);
-      const col = (type === 'odd') ? (i % cols) : (cols - 1 - (i % cols));
-      const cellX = col * cellW;
-      const cellY = A4_H - (row + 1) * cellH;
-
-      // preserve aspect ratio while fitting into cell
-      const eW = emb.width, eH = emb.height;
-      const scale = Math.min(cellW / eW, cellH / eH);
-      const drawW = eW * scale, drawH = eH * scale;
-      const drawX = cellX + (cellW - drawW) / 2;
-      const drawY = cellY + (cellH - drawH) / 2;
-
-      // draw the mini-page
-      page.drawPage(emb, { x: drawX, y: drawY, width: drawW, height: drawH });
-
-      // determine watermark text for this original page index
-      const originalIdx = chunk[i]; // 0-based
-      let text = '';
-      if (mode === 'pageNumbers') text = String(originalIdx + 1);
-      else if (mode === 'customSame') text = sameText;
-      else if (mode === 'customDifferent') text = perPageTexts.hasOwnProperty(originalIdx) ? perPageTexts[originalIdx] : '';
-
-      if (mode !== 'none' && text && text.trim() !== '') {
-        // compute font size auto-fit
-        const padding = Math.max(6, Math.floor(Math.min(drawW, drawH) * 0.06));
-        const maxW = drawW - padding * 2;
-        const maxH = drawH - padding * 2;
-
-        let size = wmOptions.baseSize || 28;
-        // cap by height
-        const maxByHeight = Math.floor(maxH * 0.55);
-        if (size > maxByHeight) size = maxByHeight;
-        // reduce until fits width
-        let textWidth = font.widthOfTextAtSize(text, size);
-        while (textWidth > maxW && size > 6) {
-          size = Math.floor(size * 0.9);
-          textWidth = font.widthOfTextAtSize(text, size);
-        }
-        if (size < 6) size = 6;
-
-        // position within mini-page area
-        let tx = drawX + (drawW - textWidth) / 2;
-        let ty = drawY + (drawH - size) / 2;
-
-        switch (wmOptions.position) {
-          case 'top-left':
-            tx = drawX + padding;
-            ty = drawY + drawH - size - padding;
-            break;
-          case 'top-right':
-            tx = drawX + drawW - textWidth - padding;
-            ty = drawY + drawH - size - padding;
-            break;
-          case 'bottom-left':
-            tx = drawX + padding;
-            ty = drawY + padding;
-            break;
-          case 'bottom-right':
-            tx = drawX + drawW - textWidth - padding;
-            ty = drawY + padding;
-            break;
-          case 'center':
-          default:
-            break;
-        }
-
-        // clamp
-        if (tx < drawX + 2) tx = drawX + 2;
-        if (ty < drawY + 2) ty = drawY + 2;
-
-        // draw text
-        page.drawText(text, {
-          x: tx,
-          y: ty,
-          size: size,
-          font: font,
-          color: rgb(wmOptions.color.r, wmOptions.color.g, wmOptions.color.b),
-          opacity: wmOptions.opacity,
-          rotate: degrees(wmOptions.rotation || 0)
-        });
-      }
-    }
-  }
-
-  return out;
-}
-
-/* helper: hex to rgb normalized */
-function hexToRgb(hex) {
-  const h = (hex || '#000000').replace('#','');
-  const r = parseInt(h.substring(0,2) || '0', 16) / 255;
-  const g = parseInt(h.substring(2,4) || '0', 16) / 255;
-  const b = parseInt(h.substring(4,6) || '0', 16) / 255;
-  return { r,g,b };
-}
-
-/* setup download anchor from bytes */
-function setupDownload(anchor, bytes, filename) {
-  const blob = new Blob([bytes], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.classList.remove('hidden');
-}
-
-/* render final output preview (first page) with pdf.js */
-async function renderOutputPreview(pdfBytes, canvasEl) {
-  try {
-    const loading = pdfjsLib.getDocument({ data: pdfBytes });
-    const pdf = await loading.promise;
-    const page = await pdf.getPage(1);
-    const viewport = page.getViewport({ scale: 1.2 });
-    canvasEl.width = viewport.width;
-    canvasEl.height = viewport.height;
-    const ctx = canvasEl.getContext('2d');
-    await page.render({ canvasContext: ctx, viewport }).promise;
-  } catch (err) {
-    console.warn('Output preview render failed:', err);
-  }
-}
-
-/* sanitize file name */
-function safeName(n) {
-  return (n || 'document').replace(/\.[^/.]+$/, '').replace(/[^\w\-_. ]+/g,'').trim() || 'document';
-}
-
-/* initial binding: re-render preview grid when previewSet changes or wmMode toggles (to enable clicks) */
-previewSet.addEventListener('change', () => { if (originalBytes) renderPreviewGrid(); });
-wmMode.addEventListener('change', () => { /* re-render for clickable state */ if (originalBytes) renderPreviewGrid(); });
-
+    const newPdfBytes = await pdfDoc.save();
+    const blob = new Blob([newPdfBytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    downloadLink.href = url;
+    downloadLink.style.display = 'inline-block';
+  });
 </script>
+
 </body>
 </html>
