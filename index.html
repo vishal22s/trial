@@ -22,52 +22,12 @@
 <body>
 <h1>16-up Odd/Even PDF — generator</h1>
 
-<input id="fileInput" type="file" accept="application/pdf" />
+<p>This tool splits your PDF into odd & even pages, then lays them out 16-up on new sheets. Each thumbnail is automatically watermarked with its original page number.</p>
+
+<input id="fileInput" type="file" accept="application/pdf" style="margin-top:12px;"/>
 
 <div style="margin-top:12px;">
-  <label>Watermark (optional)</label>
-  <input id="wmText" placeholder="Watermark text (leave blank for none)" />
-  <div class="controls" style="margin-top:8px;">
-    <div>
-      <label>Position</label>
-      <select id="wmPos">
-        <option value="center">Center</option>
-        <option value="top-left">Top-left</option>
-        <option value="top-right">Top-right</option>
-        <option value="bottom-left">Bottom-left</option>
-        <option value="bottom-right">Bottom-right</option>
-        <option value="bottom-center">Bottom-center</option>
-        <option value="top-center">Top-center</option>
-      </select>
-    </div>
-    <div>
-      <label>Opacity (0.0 - 1.0)</label>
-      <input id="wmOpacity" type="number" min="0" max="1" step="0.05" value="0.2" />
-    </div>
-    <div>
-      <label>Rotation (deg)</label>
-      <input id="wmRot" type="number" value="45" />
-    </div>
-    <div>
-      <label>Font size</label>
-      <input id="wmSize" type="number" value="36" />
-    </div>
-    <div>
-      <label>Font color (hex)</label>
-      <input id="wmColor" value="#B0B0B0" />
-    </div>
-    <div>
-      <label>Apply watermark?</label>
-      <select id="wmApply">
-        <option value="yes">Yes</option>
-        <option value="no">No</option>
-      </select>
-    </div>
-  </div>
-</div>
-
-<div style="margin-top:12px;">
-  <button id="generate" class="small">Generate PDFs (Odd & Even)</button>
+  <button id="generate">Generate PDFs (Odd & Even)</button>
 </div>
 
 <div id="progress" style="margin-top:12px; color:#333"></div>
@@ -84,7 +44,6 @@
   Built for mobile & desktop browsers. For heavy PDFs use desktop Chrome.
 </footer>
 
-<!-- Libraries -->
 <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
 <script src="https://unpkg.com/pdfjs-dist/build/pdf.min.js"></script>
 
@@ -138,180 +97,115 @@
       for(let c=0;c<cols;c++){
         const x = margin + c * cellW;
         const y = margin + r * cellH;
-        // pdf-lib origin is bottom-left; we will convert when drawing
         slots.push({ x, y, w: cellW, h: cellH, row: r, col: c });
       }
     }
     return { slots, pageWidth, pageHeight };
   }
 
-  // Even page fill order (so visual left->right rows show the pattern you described)
+  // Even page fill order (right-to-left rows)
   const evenFillPositions = [3,2,1,0,7,6,5,4,11,10,9,8,15,14,13,12];
 
-  // Compose a 16-up PDF from an array of image dataURLs with ordering according to a posMap.
-  async function compose16Up(images /*array of dataURLs or nulls for blanks*/, posMap /*array length 16 -> indices in images or null for blank*/, watermark){
+  // Compose a 16-up PDF from an array of page objects with individual watermarks.
+  async function compose16Up(pageObjects /*array of {pageNumber, dataUrl} or nulls for blanks*/, posMap /*array length 16 -> indices in pageObjects or null for blank*/){
     const pdfDoc = await PDFDocument.create();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const { slots, pageWidth, pageHeight } = getGridSlots();
     const page = pdfDoc.addPage([pageWidth, pageHeight]);
 
     // We'll place images in fixed positions using posMap.
-    // posMap[positionIndex] = index into images array OR null
     for(let positionIndex = 0; positionIndex < 16; positionIndex++){
-      const imgIndex = posMap[positionIndex];
-      if (imgIndex == null || imgIndex >= images.length) continue;
-      const dataUrl = images[imgIndex];
-      if (!dataUrl) continue;
-      // embed image
-      const pngBytes = dataUrl.split(',')[1];
-      const img = await pdfDoc.embedPng(dataUrl);
+      const objIndex = posMap[positionIndex];
+      if (objIndex == null || objIndex >= pageObjects.length) continue;
+      
+      const pageObject = pageObjects[objIndex];
+      if (!pageObject || !pageObject.dataUrl) continue;
+      
+      // Embed image
+      const img = await pdfDoc.embedPng(pageObject.dataUrl);
       const slot = slots[positionIndex];
+      
       // pdf-lib y origin is bottom-left, slot.y was from top-left style; convert:
       const drawX = slot.x;
       const drawY = pageHeight - slot.y - slot.h;
+      
       // Calculate fitting with aspect ratio preserved
-      const iw = img.width, ih = img.height;
-      const scale = Math.min(slot.w / iw, slot.h / ih);
-      const dw = iw * scale, dh = ih * scale;
-      // center inside the cell
+      const scale = Math.min(slot.w / img.width, slot.h / img.height);
+      const dw = img.width * scale;
+      const dh = img.height * scale;
+      
+      // Center inside the cell
       const dx = drawX + (slot.w - dw) / 2;
       const dy = drawY + (slot.h - dh) / 2;
       page.drawImage(img, { x: dx, y: dy, width: dw, height: dh });
-    }
 
-    // Watermark
-    if (watermark && watermark.apply && watermark.text.trim() !== ''){
-      const t = watermark.text;
-      const fontSize = watermark.fontSize || 36;
-      const opacity = Number(watermark.opacity) || 0.2;
-      const angle = (Number(watermark.rotation)||0) * Math.PI / 180;
-      const color = watermark.color || '#B0B0B0';
-      // place according to position
-      // compute text width/height
-      const textWidth = font.widthOfTextAtSize(t, fontSize);
-      const textHeight = fontSize;
-      // default position center
-      let x = pageWidth/2 - textWidth/2;
-      let y = pageHeight/2 - textHeight/2;
-      switch(watermark.position){
-        case 'top-left': x = 32; y = pageHeight - 32 - textHeight; break;
-        case 'top-right': x = pageWidth - 32 - textWidth; y = pageHeight - 32 - textHeight; break;
-        case 'bottom-left': x = 32; y = 32; break;
-        case 'bottom-right': x = pageWidth - 32 - textWidth; y = 32; break;
-        case 'bottom-center': x = pageWidth/2 - textWidth/2; y = 32; break;
-        case 'top-center': x = pageWidth/2 - textWidth/2; y = pageHeight - 32 - textHeight; break;
-        default: x = pageWidth/2 - textWidth/2; y = pageHeight/2 - textHeight/2;
-      }
-      // draw rotated text on every page (only one page currently added per compose call)
-      page.drawText(t, {
-        x, y, size: fontSize, font,
-        color: rgb(...hexToRgbNormalized(color)),
-        rotate: angle,
-        opacity
+      // ** NEW: Add individual watermark with original page number **
+      const watermarkText = String(pageObject.pageNumber);
+      const watermarkFontSize = 14;
+      const textWidth = font.widthOfTextAtSize(watermarkText, watermarkFontSize);
+      const textHeight = font.getCapHeightAtSize(watermarkFontSize);
+
+      // Center the text within the drawn image bounds (dx, dy, dw, dh)
+      const textX = dx + (dw - textWidth) / 2;
+      const textY = dy + (dh - textHeight) / 2;
+
+      page.drawText(watermarkText, {
+          x: textX,
+          y: textY,
+          size: watermarkFontSize,
+          font,
+          color: rgb(0.5, 0.5, 0.5), // Gray color
+          opacity: 0.6
       });
     }
 
     return await pdfDoc.save();
   }
 
-  function hexToRgbNormalized(hex){
-    hex = hex.replace('#','');
-    if (hex.length === 3) hex = hex.split('').map(c=>c+c).join('');
-    const r = parseInt(hex.substring(0,2),16)/255;
-    const g = parseInt(hex.substring(2,4),16)/255;
-    const b = parseInt(hex.substring(4,6),16)/255;
-    return [r,g,b];
-  }
-
-  // Top-level: take images array and produce array of page-bytes for sheet pages based on ordering function
-  async function buildSheetsFromImages(images, ordering /*function that returns posMap for each sheet*/, watermark){
-    const sheets = [];
-    // chunk images into blocks of 16 mapped to sheet positions by ordering
-    // But ordering expects we provide images in ascending page order and returns the mapping for positions (posMap)
-    let processed = 0;
-    while(processed < images.length){
-      // take up to 16 image references as a slice for this "logical block"
-      const block = images.slice(processed, processed + 16);
-      // For odd layout, ordering is trivial (pos 0..15 map to indices 0..15)
-      // For even layout we use evenFillPositions mapping: positions array length 16 where pos -> index into block or null
-      const posMap = new Array(16).fill(null);
-      const blockSize = block.length;
-      // call ordering function that fills posMap using global evenFillPositions if needed
-      ordering(posMap, processed, images.length, blockSize);
-      // we need images array index references for posMap: ordering should set posMap[position] = globalIndex or null
-      // But compose16Up expects posMap indices relative to images array passed in; easier: create per-sheet images array and a per-sheet pos map where index maps to index in per-sheet images array
-      // We'll build per-sheet images array from the global images indices present in posMap:
-      const perSheetImages = [];
-      const perSheetMap = new Array(16).fill(null);
-      // gather unique global indices in posMap in ascending order of when they appear in posMap
-      const mappingFromGlobalToLocal = {};
-      let localIdx = 0;
-      for(let p=0;p<16;p++){
-        const gidx = posMap[p];
-        if (gidx==null) continue;
-        if (gidx < processed || gidx >= processed + 16){
-          // if ordering used global indices outside this block, map accordingly
-        }
-        if (!(gidx in mappingFromGlobalToLocal)){
-          mappingFromGlobalToLocal[gidx] = localIdx++;
-          perSheetImages.push(images[gidx]);
-        }
-        perSheetMap[p] = mappingFromGlobalToLocal[gidx];
-      }
-      // produce the sheet bytes
-      const bytes = await compose16Up(perSheetImages, perSheetMap, watermark);
-      sheets.push(bytes);
-      processed += 16;
-    }
-    return sheets;
-  }
-
-  // But simpler: Instead of trying to map global indices across blocks, we will create sheets by repeatedly taking next up to 16 source images (in order),
-  // and for each sheet compute posMapPositions relative to that slice using the specific fillOrder for even pages.
-  // Re-implement sheet build functions separately for odd and even using this simpler approach.
-
-  async function buildSheetsSimple(images /*global images array*/, fillType /*'odd'|'even'*/, watermark){
+  // Build sheets (pages of the new PDF) from an array of page objects
+  async function buildSheetsSimple(pageObjects /*global pageObjects array*/, fillType /*'odd'|'even'*/){
     const sheetsBytes = [];
     const pageChunkSize = 16;
-    for(let offset = 0; offset < images.length; offset += pageChunkSize){
-      const slice = images.slice(offset, offset + pageChunkSize); // length <= 16
+    for(let offset = 0; offset < pageObjects.length; offset += pageChunkSize){
+      const slice = pageObjects.slice(offset, offset + pageChunkSize); // length <= 16
+      
       // posMap where posMap[position] = index in slice (0..slice.length-1) or null
       const posMap = new Array(16).fill(null);
       if (fillType === 'odd'){
-        // fill left->right top->bottom: pos 0..(slice.length-1) = 0..n-1
-        for(let i=0;i<slice.length;i++){
+        // Fill left->right top->bottom: pos 0..(slice.length-1) = 0..n-1
+        for(let i=0; i<slice.length; i++){
           posMap[i] = i;
         }
       } else {
-        // even: use evenFillPositions to map ascending slice indices into positions
-        // evenFillPositions array defines positions in the page that will be filled in ascending order of pages
-        for(let i=0;i<slice.length;i++){
+        // Even: use evenFillPositions to map ascending slice indices into positions
+        for(let i=0; i<slice.length; i++){
           const pos = evenFillPositions[i];
           posMap[pos] = i;
         }
       }
-      const b = await compose16Up(slice, posMap, watermark);
+      const b = await compose16Up(slice, posMap);
       sheetsBytes.push(b);
     }
     return sheetsBytes;
   }
 
-  // Merge sheet bytes into single PDF
+  // Merge sheet bytes into a single PDF
   async function mergeSheets(sheetByteArrays){
-    // if only one sheet, return it
+    if (sheetByteArrays.length === 0) return new Uint8Array();
     if (sheetByteArrays.length === 1) return sheetByteArrays[0];
+    
     const out = await PDFDocument.create();
     for(const bytes of sheetByteArrays){
       const src = await PDFDocument.load(bytes);
-      const copied = await out.copyPages(src, src.getPageIndices());
-      for(const p of copied) out.addPage(p);
+      const [copiedPage] = await out.copyPages(src, [0]);
+      out.addPage(copiedPage);
     }
     return await out.save();
   }
 
-  // Preview helper createThumb (takes first sheet byte and renders first page)
+  // Preview helper to create a thumbnail from the first sheet's bytes
   async function createPreviewFromPdfBytes(bytes){
-    // load with pdfjs from bytes -> url
+    if (!bytes || bytes.length === 0) return null;
     const uint8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     const loadingTask = pdfjsLib.getDocument({ data: uint8 });
     const doc = await loadingTask.promise;
@@ -324,7 +218,7 @@
     return c.toDataURL('image/png');
   }
 
-  // Generate logic
+  // --- Main Generate Logic ---
   generateBtn.addEventListener('click', async ()=>{
     const file = fileInput.files && fileInput.files[0];
     if (!file){ alert('Choose a PDF file first'); return; }
@@ -339,74 +233,90 @@
     const pageCount = pdfDoc.numPages;
     setProgress(`PDF loaded — ${pageCount} pages. Rendering pages to images... (this may take a bit)`);
 
-    // render each page to dataURL (sequential to avoid memory spikes)
-    const pageImages = [];
-    for(let i=0;i<pageCount;i++){
-      setProgress(`Rendering page ${i+1}/${pageCount}...`);
-      const dataUrl = await renderPageToImage(pdfDoc, i, 1.6); // scale tweaking: 1.6 works reasonably
-      pageImages.push(dataUrl);
-      // quick thumbnail preview of original pages (can be heavy if many; we only show a few)
+    // Render each page to a dataURL and store it with its original page number.
+    const allPageObjects = [];
+    for(let i=0; i<pageCount; i++){
+      const pageNumber = i + 1;
+      setProgress(`Rendering page ${pageNumber}/${pageCount}...`);
+      const dataUrl = await renderPageToImage(pdfDoc, i, 1.6);
+      allPageObjects.push({ pageNumber, dataUrl });
+      
+      // Quick thumbnail preview of original pages
       if (i < 6){
         const img = document.createElement('img'); img.src = dataUrl; img.className='thumb';
         preview.appendChild(img);
       }
     }
 
-    // separate odd/even pages per user's definition: odd pages are 1,3,5 -> indices 0,2,4; even are 2,4,6 -> indices 1,3,5
-    const oddImages = [];
-    const evenImages = [];
-    for(let i=0;i<pageImages.length;i++){
-      const pageNumber = i+1;
-      if (pageNumber % 2 === 1) oddImages.push(pageImages[i]);
-      else evenImages.push(pageImages[i]);
+    // Separate into odd/even page objects
+    const oddPageObjects = [];
+    const evenPageObjects = [];
+    for(const pageObj of allPageObjects){
+      if (pageObj.pageNumber % 2 === 1) {
+        oddPageObjects.push(pageObj);
+      } else {
+        evenPageObjects.push(pageObj);
+      }
     }
-
-    // watermark object
-    const watermark = {
-      apply: (document.getElementById('wmApply').value === 'yes'),
-      text: document.getElementById('wmText').value || '',
-      position: document.getElementById('wmPos').value,
-      opacity: Number(document.getElementById('wmOpacity').value),
-      rotation: Number(document.getElementById('wmRot').value),
-      fontSize: Number(document.getElementById('wmSize').value),
-      color: document.getElementById('wmColor').value
-    };
 
     // Build odd sheets
     setProgress('Composing odd-pages sheets (16-up L→R, top→bottom)...');
-    const oddSheets = await buildSheetsSimple(oddImages, 'odd', watermark);
+    const oddSheets = await buildSheetsSimple(oddPageObjects, 'odd');
     setProgress('Merging odd sheets...');
     const oddBytes = await mergeSheets(oddSheets);
 
     // Build even sheets
     setProgress('Composing even-pages sheets (custom right→left block layout)...');
-    const evenSheets = await buildSheetsSimple(evenImages, 'even', watermark);
+    const evenSheets = await buildSheetsSimple(evenPageObjects, 'even');
     setProgress('Merging even sheets...');
     const evenBytes = await mergeSheets(evenSheets);
 
     setProgress('Generating downloadable files and preview...');
-    // create blob URLs for download
-    const oddBlob = new Blob([oddBytes], { type: 'application/pdf' });
-    const evenBlob = new Blob([evenBytes], { type: 'application/pdf' });
-    const oddUrl = URL.createObjectURL(oddBlob);
-    const evenUrl = URL.createObjectURL(evenBlob);
-    downloadOdd.href = oddUrl; downloadOdd.style.display='inline-block';
-    downloadEven.href = evenUrl; downloadEven.style.display='inline-block';
+    
+    // Create blob URLs for download for odd pages
+    if(oddBytes.length > 0) {
+      const oddBlob = new Blob([oddBytes], { type: 'application/pdf' });
+      const oddUrl = URL.createObjectURL(oddBlob);
+      downloadOdd.href = oddUrl;
+      downloadOdd.style.display='inline-block';
+    }
 
-    // add previews (first page thumbnails)
-    try{
-      const oddPreviewData = await createPreviewFromPdfBytes(oddBytes);
-      const evenPreviewData = await createPreviewFromPdfBytes(evenBytes);
-      const imgOdd = document.createElement('img'); imgOdd.src = oddPreviewData; imgOdd.className='thumb';
-      const imgEven = document.createElement('img'); imgEven.src = evenPreviewData; imgEven.className='thumb';
-      const holder = document.createElement('div'); holder.style.display='flex'; holder.style.gap='8px';
-      holder.appendChild(imgOdd); holder.appendChild(imgEven);
-      preview.appendChild(holder);
+    // Create blob URLs for download for even pages
+    if(evenBytes.length > 0) {
+      const evenBlob = new Blob([evenBytes], { type: 'application/pdf' });
+      const evenUrl = URL.createObjectURL(evenBlob);
+      downloadEven.href = evenUrl;
+      downloadEven.style.display='inline-block';
+    }
+
+    // Add previews of the final generated PDFs
+    try {
+        const oddPreviewData = await createPreviewFromPdfBytes(oddBytes);
+        const evenPreviewData = await createPreviewFromPdfBytes(evenBytes);
+        const holder = document.createElement('div');
+        holder.style.display='flex';
+        holder.style.gap='8px';
+        holder.style.marginTop='16px';
+        holder.innerHTML = `<strong>Generated PDF Previews:</strong>`;
+
+        if (oddPreviewData) {
+            const imgOdd = document.createElement('img');
+            imgOdd.src = oddPreviewData;
+            imgOdd.className = 'thumb';
+            holder.appendChild(imgOdd);
+        }
+        if (evenPreviewData) {
+            const imgEven = document.createElement('img');
+            imgEven.src = evenPreviewData;
+            imgEven.className = 'thumb';
+            holder.appendChild(imgEven);
+        }
+        preview.appendChild(holder);
     } catch(e){
       console.warn('Preview generation failed', e);
     }
 
-    setProgress('Done. Click download links above.');
+    setProgress('Done. Click the download links that have appeared above.');
   });
 
 })();
