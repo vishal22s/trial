@@ -302,7 +302,7 @@ async function createImposedPdf(originalBytes, pageIndices, type, updateProgress
             // per-mini-page watermark (if enabled)
             if (watermarkOptions && embeddedFont) {
                 const originalPageNumber = pageChunk[i] + 1; // convert 0-based index to 1-based
-                const miniText = `${watermarkOptions.text} - Pg ${originalPageNumber}`;
+                const miniText = `${watermarkOptions.text} ${originalPageNumber}`;
 
                 // choose font size relative to mini-page height to prevent overflow
                 const desiredSize = watermarkOptions.size || 50;
